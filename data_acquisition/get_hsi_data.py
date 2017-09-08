@@ -48,7 +48,6 @@ def get_indianpines(verbose=None):
     
     # check if pickle file is there
     if os.path.exists("indianpines.pickle"):
-        
         # log success
         logging.info("Found indianpines.pickle file.")
         
