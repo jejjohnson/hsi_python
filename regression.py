@@ -84,7 +84,8 @@ class SimpleR(object):
 
             grid_search = GridSearchCV(
                 Ridge(),
-                param_grid=param_grid
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
             )
 
             grid_search.fit(x_train, y_train)
@@ -111,7 +112,8 @@ class SimpleR(object):
 
             grid_search = GridSearchCV(
                 SVR(),
-                param_grid=param_grid
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
             )
 
             grid_search.fit(x_train, y_train)
@@ -135,7 +137,8 @@ class SimpleR(object):
 
             grid_search = GridSearchCV(
                 KernelRidge(),
-                param_grid=param_grid
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
             )
 
             grid_search.fit(x_train, y_train)
