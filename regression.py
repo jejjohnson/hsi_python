@@ -2,13 +2,18 @@ import numpy as np
 import time
 import warnings
 from sklearn.datasets import load_boston
+from sklearn.preprocessing import PolynomialFeatures
 from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
 from sklearn.linear_model import (LinearRegression,
                                   Ridge,
-                                  LassoCV)
-from sklearn.ensemble import RandomForestRegressor
+                                  LassoCV,
+                                  ElasticNetCV)
+from sklearn.ensemble import RandomForestRegressor, BaggingRegressor, AdaBoostRegressor
 from sklearn.svm import SVR
 from sklearn.kernel_ridge import KernelRidge
+from sklearn.neighbors import KNeighborsRegressor, RadiusNeighborsRegressor
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 from sklearn.metrics import (mean_squared_error,
@@ -38,11 +43,19 @@ class SimpleR(object):
         self.predictions = dict()
         self.algorithm_names = {
             'ols': 'Linear Regresssion',
+            'pr': 'Polynomial Regression',
             'rls': 'Ridge Regression',
             'rf': 'Random Forest Regression',
             'svm': 'Support Vector Regression',
             'krr': 'Kernel Ridge Regression',
-            'gpr': 'Gaussian Process Regression'
+            'gpr': 'Gaussian Process Regression',
+            'lasso': 'LASSO',
+            'elastic': 'Elastic Net',
+            'knn': 'K-Nearest Neighbors',
+            'rnn': 'Radius Nearest Neighbors',
+            'dt': 'Decision Trees',
+            'bag': 'Bagged Trees',
+            'boost': 'Boosted Trees'
         }
     
     def fit_models(self, x_train, y_train):
@@ -61,7 +74,7 @@ class SimpleR(object):
         # -------------------
         # Linear Regression
         # -------------------
-        if 'ols' in self.models_list:
+        if 'ols' in self.models_list or 'all' in self.models_list:
             algorithm = 'ols'
             print('Fitting {}...'.format(self.algorithm_names[algorithm]))
             t0 = time.time()
@@ -71,10 +84,38 @@ class SimpleR(object):
             print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
             print('Done!')
 
+        # --------------------
+        # Polynomial Features
+        # --------------------
+        if 'pr' in self.models_list or 'all' in self.models_list:
+            algorithm = 'pr'
+            t0 = time.time()
+            param_grid = {
+                'polyfeat__degree': [1, 2, 3, 4]
+            }
+
+            pipe = Pipeline([
+                ('polyfeat', PolynomialFeatures()),
+                ('linregress', LinearRegression())
+            ])
+
+            grid_search = GridSearchCV(
+                pipe,
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
+            )
+
+            grid_search.fit(x_train, y_train)
+
+            self.Models[algorithm] = grid_search.best_estimator_
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+
         # ------------------
         # Ridge Regression
         # ------------------
-        if 'rls' in self.models_list:
+        if 'rls' in self.models_list or 'all' in self.models_list:
             algorithm = 'rls'
             print('Fitting {}...'.format(self.algorithm_names[algorithm]))
             t0 = time.time()
@@ -98,7 +139,7 @@ class SimpleR(object):
         # ------------------
         # SVMs
         # ------------------
-        if 'svm' in self.models_list:
+        if 'svm' in self.models_list or 'all' in self.models_list:
             algorithm = 'svm'
             print('Fitting {}...'.format(self.algorithm_names[algorithm]))
             t0 = time.time()
@@ -126,7 +167,7 @@ class SimpleR(object):
         # ------------------
         # KRRs
         # ------------------
-        if 'krr' in self.models_list:
+        if 'krr' in self.models_list or 'all' in self.models_list:
             algorithm = 'krr'
             t0 = time.time()
             print('Fitting {}...'.format(self.algorithm_names[algorithm]))
@@ -151,7 +192,7 @@ class SimpleR(object):
         # ------------------
         # GPs (ARD Kernel)
         # ------------------
-        if 'gpr' in self.models_list:
+        if 'gpr' in self.models_list or 'all' in self.models_list:
             algorithm = 'gpr'
             print('Fitting {}...'.format(self.algorithm_names[algorithm]))
             kernel = ConstantKernel(1., (1e-10, 1000)) * \
@@ -168,11 +209,154 @@ class SimpleR(object):
         # ------------------
         # LASSO
         # ------------------
+        if 'lasso' in self.models_list or 'all' in self.models_list:
+            algorithm = 'lasso'
+            t0 = time.time()
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            
+            alphas = np.linspace(0.01, 10, 20)
 
+            self.Models[algorithm] = LassoCV(alphas=alphas, n_jobs=self.n_jobs)
+
+            self.Models[algorithm].fit(x_train, y_train)
+            
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+
+        # ------------------
+        # Elastic Net
+        # ------------------
+        if 'elastic' in self.models_list or 'all' in self.models_list:
+            algorithm = 'elastic'
+            t0 = time.time()
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            
+            alphas = np.linspace(0.01, 10, 20)
+
+            self.Models[algorithm] = ElasticNetCV(alphas=alphas, n_jobs=self.n_jobs)
+
+            self.Models[algorithm].fit(x_train, y_train)
+            
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+
+        # --------------------
+        # K-Nearest Neighbors
+        # --------------------
+        if 'knn' in self.models_list or 'all' in self.models_list:
+            algorithm = 'knn'
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            t0 = time.time()
+            param_grid = {
+                'n_neighbors': [1, 2, 3, 4, 5, 10, 25, 40, 50],
+                'weights': ['uniform', 'distance'],
+                'p': [1, 2]
+            }
+
+            grid_search = GridSearchCV(
+                KNeighborsRegressor(),
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
+            )
+
+            grid_search.fit(x_train, y_train)
+            
+            self.Models[algorithm] = grid_search.best_estimator_
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+
+        # ------------------
+        # Decision Trees
+        # ------------------
+        if 'dt' in self.models_list or 'all' in self.models_list:
+            algorithm = 'dt'
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            t0 = time.time()
+            param_grid = {
+                'criterion': ['mse', 'mae'],
+                'splitter': ['best', 'random']
+            }
+
+            grid_search = GridSearchCV(
+                DecisionTreeRegressor(random_state=self.random_state),
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
+            )
+
+            grid_search.fit(x_train, y_train)
+            
+            self.Models[algorithm] = grid_search.best_estimator_
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+
+        # ------------------
+        # Bagged Trees
+        # ------------------
+        if 'bag' in self.models_list or 'all' in self.models_list:
+            algorithm = 'bag'
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            t0 = time.time()
+            param_grid = {
+                'base_estimator__criterion': ['mse', 'mae'],
+                'base_estimator__splitter': ['best', 'random'],
+                'n_estimators': [10, 20, 30, 40, 50, 60]
+            }
+
+            dt_model = DecisionTreeRegressor(random_state=self.random_state)
+            bagging_model = BaggingRegressor(base_estimator=dt_model)
+
+            grid_search = GridSearchCV(
+                bagging_model,
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
+            )
+
+            grid_search.fit(x_train, y_train)
+            
+            self.Models[algorithm] = grid_search.best_estimator_
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+        # ------------------
+        # Adaboost Trees
+        # ------------------
+        if 'boost' in self.models_list or 'all' in self.models_list:
+            algorithm = 'boost'
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            t0 = time.time()
+
+            param_grid = {
+                'base_estimator__criterion': ['mse', 'mae'],
+                'base_estimator__splitter': ['best', 'random'],
+                'n_estimators': [10, 20, 30, 40, 50, 60],
+                'loss': ['linear', 'square']
+            }
+
+            dt_model = DecisionTreeRegressor(random_state=self.random_state,
+                                            )
+            adaboost_model = AdaBoostRegressor(base_estimator=dt_model)
+
+            grid_search = GridSearchCV(
+                adaboost_model,
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
+            )
+
+            grid_search.fit(x_train, y_train)
+            
+            self.Models[algorithm] = grid_search.best_estimator_
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+        
         # -----------------------
         # Random Forest Regressor
         # -----------------------
-        if 'rf' in self.models_list:
+        if 'rf' in self.models_list or 'all' in self.models_list:
             algorithm = 'rf'
             print('Fitting {}...'.format(self.algorithm_names[algorithm]))
 
@@ -194,6 +378,7 @@ class SimpleR(object):
             self.fit_times[algorithm] = time.time() - t0
             print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
             print('Done!')
+
 
         return self
 
@@ -269,16 +454,23 @@ def main():
 
     
     # Initialize Simple R
-    model_list = ['ols', 'rls', 'rf', 'krr', 'gpr', 'svm']
+    model_list = ['all']
     n_jobs = 2
     Models = SimpleR(model_list, n_jobs=n_jobs, 
                      random_state=random_state)
 
     # Fit Models
+    t0 = time.time()
     Models.fit_models(x_train, y_train)
+    t1 = time.time() - t0
+    print('All Models fitted in: {:4f} secs'.format(t1))
+
 
     # Predict Data
+    t0 = time.time()
     Models.predict_models(x_test)
+    t1 = time.time() - t0
+    print('All Data Predicted in: {:4f} secs'.format(t1))
 
     # Get statistics
     Models.get_stats(y_test)
