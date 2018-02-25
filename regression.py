@@ -1,6 +1,9 @@
 import numpy as np 
 import time
 import warnings
+from scipy import stats
+import pandas as pd
+from sklearn.externals import joblib
 from sklearn.datasets import load_boston
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.model_selection import GridSearchCV
@@ -23,17 +26,16 @@ from sklearn.metrics import (mean_squared_error,
 
 warnings.simplefilter('ignore')
 
-# TODO - Polynomial Regression
-# TODO - LASSO
-# TODO - Elastic Net
-# TODO - KNN
 # TODO - Radius NN
-# TODO - Decision Trees
-# TODO - Bagging Trees
-# TODO - AdaBoost Regression
 # TODO - Boosted Random Forest
 # TODO - Relevance Vector Machanes
 # TODO - GPR Heteroscedastic Kernel
+# TODO - Nystrom KRR
+# TODO - RFF KRR
+# TODO - Implement Better save strategy. (Save after each fit)
+# TODO - Implement a Finish fit strategy in case of failure
+# TODO - Implement with trials with different random states
+
 
 class SimpleR(object):
     def __init__(self, models_list=None, n_jobs=1, random_state=None):
@@ -43,22 +45,22 @@ class SimpleR(object):
         self.predictions = dict()
         self.algorithm_names = {
             'ols': 'Linear Regresssion',
-            'pr': 'Polynomial Regression',
+            'polyr': 'Polynomial Regression',
             'rls': 'Ridge Regression',
-            'rf': 'Random Forest Regression',
-            'svm': 'Support Vector Regression',
-            'krr': 'Kernel Ridge Regression',
-            'gpr': 'Gaussian Process Regression',
             'lasso': 'LASSO',
             'elastic': 'Elastic Net',
             'knn': 'K-Nearest Neighbors',
             'rnn': 'Radius Nearest Neighbors',
             'dt': 'Decision Trees',
             'bag': 'Bagged Trees',
-            'boost': 'Boosted Trees'
+            'boost': 'Boosted Trees',
+            'rf': 'Random Forest Regression',
+            'svm': 'Support Vector Regression',
+            'krr': 'Kernel Ridge Regression',
+            'gpr': 'Gaussian Process Regression'
         }
     
-    def fit_models(self, x_train, y_train):
+    def fit_models(self, x_train, y_train, save=True):
 
         self.Models = dict()
         self.fit_times = dict()
@@ -87,8 +89,9 @@ class SimpleR(object):
         # --------------------
         # Polynomial Features
         # --------------------
-        if 'pr' in self.models_list or 'all' in self.models_list:
-            algorithm = 'pr'
+        if 'polyr' in self.models_list or 'all' in self.models_list:
+            algorithm = 'polyr'
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
             t0 = time.time()
             param_grid = {
                 'polyfeat__degree': [1, 2, 3, 4]
@@ -132,76 +135,6 @@ class SimpleR(object):
             grid_search.fit(x_train, y_train)
             
             self.Models[algorithm] = grid_search.best_estimator_
-            self.fit_times[algorithm] = time.time() - t0
-            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
-            print('Done!')
-
-        # ------------------
-        # SVMs
-        # ------------------
-        if 'svm' in self.models_list or 'all' in self.models_list:
-            algorithm = 'svm'
-            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
-            t0 = time.time()
-            param_grid = {
-                'C': np.array( [1, 10, 100, 1000.]),
-                "epsilon": np.array([ .001, .005, .01, .05, .1, .2 ]
-                                    )/(np.max(y_train-np.mean(y_train)) - 
-                                    np.min(y_train-np.mean(y_train))),
-                'gamma': x_train.shape[1] /2*np.logspace( -6 ,6, num=10)
-            }
-
-            grid_search = GridSearchCV(
-                SVR(),
-                param_grid=param_grid,
-                n_jobs=self.n_jobs
-            )
-
-            grid_search.fit(x_train, y_train)
-            
-            self.Models[algorithm] = grid_search.best_estimator_
-            self.fit_times[algorithm] = time.time() - t0
-            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
-            print('Done!')
-
-        # ------------------
-        # KRRs
-        # ------------------
-        if 'krr' in self.models_list or 'all' in self.models_list:
-            algorithm = 'krr'
-            t0 = time.time()
-            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
-            param_grid = {
-                'alpha': np.array([ .0001, .001, .01, .1, 1. ]) / x_train.shape[0],
-                'gamma': x_train.shape[1] /2*np.logspace( -6 ,6, num=10)
-            }
-
-            grid_search = GridSearchCV(
-                KernelRidge(),
-                param_grid=param_grid,
-                n_jobs=self.n_jobs
-            )
-
-            grid_search.fit(x_train, y_train)
-            
-            self.Models[algorithm] = grid_search.best_estimator_
-            self.fit_times[algorithm] = time.time() - t0
-            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
-            print('Done!')
-
-        # ------------------
-        # GPs (ARD Kernel)
-        # ------------------
-        if 'gpr' in self.models_list or 'all' in self.models_list:
-            algorithm = 'gpr'
-            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
-            kernel = ConstantKernel(1., (1e-10, 1000)) * \
-                RBF(length_scale=np.repeat(1.0,x_train.shape[1]), length_scale_bounds=(1e-2, 1e2)) \
-                + WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-5, 1e+1))
-
-            t0 = time.time()
-            self.Models[algorithm] = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=4)
-            self.Models[algorithm].fit(x_train, y_train)
             self.fit_times[algorithm] = time.time() - t0
             print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
             print('Done!')
@@ -321,6 +254,7 @@ class SimpleR(object):
             self.fit_times[algorithm] = time.time() - t0
             print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
             print('Done!')
+
         # ------------------
         # Adaboost Trees
         # ------------------
@@ -379,6 +313,75 @@ class SimpleR(object):
             print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
             print('Done!')
 
+        # ------------------
+        # SVMs
+        # ------------------
+        if 'svm' in self.models_list or 'all' in self.models_list:
+            algorithm = 'svm'
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            t0 = time.time()
+            param_grid = {
+                'C': np.array( [1, 10, 100, 1000.]),
+                "epsilon": np.array([ .001, .005, .01, .05, .1, .2 ]
+                                    )/(np.max(y_train-np.mean(y_train)) - 
+                                    np.min(y_train-np.mean(y_train))),
+                'gamma': x_train.shape[1] /2*np.logspace( -6 ,6, num=10)
+            }
+
+            grid_search = GridSearchCV(
+                SVR(),
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
+            )
+
+            grid_search.fit(x_train, y_train)
+            
+            self.Models[algorithm] = grid_search.best_estimator_
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+
+        # ------------------
+        # KRRs
+        # ------------------
+        if 'krr' in self.models_list or 'all' in self.models_list:
+            algorithm = 'krr'
+            t0 = time.time()
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            param_grid = {
+                'alpha': np.array([ .0001, .001, .01, .1, 1. ]) / x_train.shape[0],
+                'gamma': x_train.shape[1] / 2*np.logspace( -6 ,6, num=10)
+            }
+
+            grid_search = GridSearchCV(
+                KernelRidge(),
+                param_grid=param_grid,
+                n_jobs=self.n_jobs
+            )
+
+            grid_search.fit(x_train, y_train)
+            
+            self.Models[algorithm] = grid_search.best_estimator_
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
+
+        # ------------------
+        # GPs (ARD Kernel)
+        # ------------------
+        if 'gpr' in self.models_list or 'all' in self.models_list:
+            algorithm = 'gpr'
+            print('Fitting {}...'.format(self.algorithm_names[algorithm]))
+            kernel = ConstantKernel(1., (1e-10, 1000)) * \
+                RBF(length_scale=np.repeat(1.0,x_train.shape[1]), length_scale_bounds=(1e-2, 1e2)) \
+                + WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-5, 1e+1))
+
+            t0 = time.time()
+            self.Models[algorithm] = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=4)
+            self.Models[algorithm].fit(x_train, y_train)
+            self.fit_times[algorithm] = time.time() - t0
+            print('Fitting Done in: {:4f} secs'.format(self.fit_times[algorithm]))
+            print('Done!')
 
         return self
 
@@ -388,11 +391,36 @@ class SimpleR(object):
         # TODO have alternative path save
         # TODO check path names provided
 
-        pass
+        # check to see if models have been fitted
+        if not hasattr(self, 'Models'):
+            raise ValueError('No Models have been fitted. Cannot save.')
+        
+        # save the simple r class to a pckl file
+        if savename is None:
+            savename = 'models'
+        
+        joblib.dump(self, str(savename) + '.pckl')
+
+        return self
 
     def load_models(self, path=None):
-
         pass
+        # # TODO save models as a pickle file
+        # # TODO have alternative path save
+        # # TODO check path names provided
+
+        # # check to see if models have been fitted
+        # if hasattr(self, 'Models'):
+        #     raise ValueError('Models have already been fitted.')
+
+        # if path is None:
+        #     path = 'models'
+        
+        # self = joblib.load(str(path) + '.pckl')
+
+        # self.Models = self.Models
+
+        # return self
 
     def predict_models(self, x_test):
 
@@ -412,27 +440,93 @@ class SimpleR(object):
 
         return self
     
-    def get_stats(self, y_test):
+    def get_stats(self, y_test, save=None):
 
         # TODO: check y_test size
         # TODO: check if model has been fitted
-        self.mse = dict()
-        self.mae = dict()
-        self.r2 = dict()
+
+        # initialize dataframe dictionary
+        self.best_params = dict()
+
+        columns = [
+            'Model',
+            'Best Params',
+            'Residuals',
+            'MSE',
+            'MAE',
+            'R Value',
+            'R2 Value',
+            'P Value',
+            'Pearson R',
+            'Slope',
+            'Intercept',
+            'Standard Error',
+            'Fit Times',
+            'Predict Times'
+        ]
+
+        # Initialize empty dataframe with columns
+        df = pd.DataFrame(columns=columns)
 
         for model in self.Models:
-            self.mse[model] = mean_squared_error(
-                self.predictions[model], y_test
-            )
-            self.mae[model] = mean_absolute_error(
-                self.predictions[model], y_test
-            )
-            self.r2[model] = r2_score(
-                self.predictions[model], y_test
-            )
 
+            # Bias
+            slope, intercept, r_value, p_value, std_err = \
+                stats.linregress(self.predictions[model], y_test)
+
+
+            # Pearson Coefficients
+            pearsonr, _ = \
+                stats.pearsonr(self.predictions[model], y_test)
+            
+            # get best parameters for the model
+            try:
+                best_params = self.Models[model].get_params()
+            except AttributeError:
+                print('No parameters found.')
+                best_params = {}
+            
+            # Params for the GPR
+            if hasattr(self.Models[model], "kernel_"):
+                best_params = self.Models[model].kernel_.get_params()
+
+
+            # append to data save
+            df = df.append({
+                "Model": self.algorithm_names[model],
+                "Best Params": best_params,
+                "Residuals": self.predictions[model] - y_test,
+                "MSE": mean_squared_error(self.predictions[model], y_test),
+                "MAE": mean_absolute_error(self.predictions[model], y_test),
+                "R2 Value": r2_score(self.predictions[model], y_test),
+                "Pearson R": pearsonr,
+                "Slope": slope,
+                "Intercept": intercept,
+                "R Value": r_value,
+                "P Value": p_value,
+                "Standard Error": std_err,
+                "Fit Times": self.fit_times[model],
+                "Predict Times": self.predict_times[model]
+            }, ignore_index=True)
+
+
+        # save dataframe
+        self.results = df
         return self
 
+    def save_stats(self, path=None, name=None):
+
+        if not hasattr(self, 'results'):
+            raise ValueError('No results dataframe. Need to get stats first.')
+        
+        # TODO - implement path and check if valid
+        if name is None:
+            self.results.to_csv("errors.csv", index=False)
+        else:
+            self.results.to_csv(str(name + '.csv'), index=False)
+
+
+        return self
 
 def main():
 
@@ -465,6 +559,18 @@ def main():
     t1 = time.time() - t0
     print('All Models fitted in: {:4f} secs'.format(t1))
 
+    # Save Models Class
+    t0 = time.time()
+    Models.save_models(savename='models')
+    t1 = time.time() - t0
+    print('Saved models in {:.4f} secs'.format(t1))
+
+    # Load Models (Not necessary - only to show an example)
+    del Models
+    t0 = time.time()
+    Models = joblib.load('models.pckl')
+    t1 = time.time() - t0
+    print('Loaded Models in {:.4f} secs'.format(t1))
 
     # Predict Data
     t0 = time.time()
@@ -475,18 +581,15 @@ def main():
     # Get statistics
     Models.get_stats(y_test)
 
-    # Print statistic
-    print('Mean Squared Errors:')
-    for key in Models.mse:
-        print(key, Models.mse[key])
-    print('Mean Absolute Error')
-    for key in Models.mae:
-        print(key, Models.mae[key])
-    print('R2 Value')
-    for key in Models.r2:
-        print(key, Models.r2[key])
+    # Save the stats to csv file
+    Models.save_stats(name='errors')
+
+    # print stats
+    # results = pd.read_csv('errors.csv')     # From CSV File
+    print(Models.results)                   # From class itself
 
     return None
 
 if __name__ == "__main__":
+
     main()
